@@ -7,6 +7,7 @@ import crypto, {
   privateDecrypt,
   randomBytes,
   createCipheriv,
+  createDecipheriv,
 } from 'node:crypto'
 
 export const generateKeyPair = async (): Promise<{
@@ -159,4 +160,85 @@ const decodeEncryptedKeyAndPayload = (payload: string) => {
   const encryptedKey = payloadBuffer.subarray(0, 256)
   const encryptedPayload = payloadBuffer.subarray(256)
   return { encryptedKey, encryptedPayload }
+}
+
+const ENCRYPT_ID_IV_LENGTH = 12
+const ECNRYPT_ID_AUTH_TAG_LENGTH = 16
+const ECNRYPT_ID_ALGORITHM = 'aes-256-gcm'
+export const encryptId = (tokenKey: string, id: number, exp: number = 0) => {
+  if (id < 0 || id > 4294967295) {
+    // 2^32 - 1
+    throw new Error(
+      'id must fit within a 4-byte unsigned integer range (0 to 4294967295).'
+    )
+  }
+  if (typeof exp !== 'number' || !Number.isInteger(exp)) {
+    throw new Error('exp must be an integer.')
+  }
+  if (exp < 0 || exp > Number.MAX_SAFE_INTEGER) {
+    console.warn(
+      'exp is negative or may exceed safe integer range. Consider using BigInt for full 8-byte unsigned timestamps.'
+    )
+    if (exp < 0) {
+      throw new Error(
+        'Timestamp must be non-negative for unsigned representation.'
+      )
+    }
+  }
+
+  const key = Buffer.from(tokenKey, 'hex')
+
+  const buffer = Buffer.alloc(12)
+  buffer.writeUint32LE(id, 0)
+
+  const high = Math.floor(exp / 2 ** 32)
+  const low = exp % 2 ** 32
+  buffer.writeUInt32LE(high, 4) // Write the high 32 bits (Little-Endian, Unsigned)
+  buffer.writeUInt32LE(low, 8) // Write the low 32 bits (Little-Endian, Unsigned)
+
+  const iv = randomBytes(ENCRYPT_ID_IV_LENGTH)
+  const cipher = createCipheriv(ECNRYPT_ID_ALGORITHM, key, iv, {
+    authTagLength: ECNRYPT_ID_AUTH_TAG_LENGTH,
+  })
+
+  const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()])
+
+  const authTag = cipher.getAuthTag()
+  const tokenBuffer = Buffer.concat([iv, encrypted, authTag])
+
+  return tokenBuffer.toString('base64url')
+}
+
+export const decryptId = (tokenKey: string, token: string) => {
+  const key = Buffer.from(tokenKey, 'hex')
+  const tokenBuffer = Buffer.from(token, 'base64url')
+  const iv = tokenBuffer.subarray(0, ENCRYPT_ID_IV_LENGTH)
+
+  if (tokenBuffer.length < ENCRYPT_ID_IV_LENGTH + ENCRYPT_ID_IV_LENGTH + 12) {
+    throw new Error('Token is too short.')
+  }
+
+  const encryptedPayload = tokenBuffer.subarray(
+    ENCRYPT_ID_IV_LENGTH,
+    tokenBuffer.length - ECNRYPT_ID_AUTH_TAG_LENGTH
+  )
+  const authTag = tokenBuffer.subarray(
+    tokenBuffer.length - ECNRYPT_ID_AUTH_TAG_LENGTH
+  )
+  const decipher = createDecipheriv(ECNRYPT_ID_ALGORITHM, key, iv, {
+    authTagLength: ECNRYPT_ID_AUTH_TAG_LENGTH,
+  })
+  decipher.setAuthTag(authTag)
+  const decryptedPayload = Buffer.concat([
+    decipher.update(encryptedPayload),
+    decipher.final(),
+  ])
+
+  const id = decryptedPayload.readUInt32LE(0)
+
+  const high = decryptedPayload.readUInt32LE(4)
+  const low = decryptedPayload.readUInt32LE(8)
+  const exp = high * 2 ** 32 + low
+
+  return { id, exp }
 }
