@@ -1,5 +1,14 @@
 import test from 'ava'
-import { generateKeyPair, sign, verify, encrypt, decrypt } from '../src'
+import {
+  generateKeyPair,
+  sign,
+  verify,
+  encrypt,
+  decrypt,
+  encryptId,
+  generateTokenKey,
+  decryptId,
+} from '../src'
 import { randomBytes } from 'node:crypto'
 
 test('should sign and verify string', async (t) => {
@@ -14,7 +23,7 @@ test('should sign and verify string', async (t) => {
     const start = Date.now()
     const verified = verify(signed, publicKey)
     t.log(`Verify time: ${Date.now() - start}ms`)
-    t.is(data, verified)
+    t.is(data, verified as string)
   })
 })
 
@@ -31,7 +40,7 @@ test('should sign and verify huge string', async (t) => {
     const start = Date.now()
     const verified = verify(signed, publicKey)
     t.log(`Verify time: ${Date.now() - start}ms`)
-    t.is(data, verified)
+    t.is(data, verified as string)
   })
 })
 
@@ -134,7 +143,7 @@ test('should fail with wrong key', async (t) => {
   })
 })
 
-test.only('Buffer to Uint8Array refactor compatibility', (t) => {
+test('Legacy compatibility', (t) => {
   const publicKey =
     '-----BEGIN RSA PUBLIC KEY-----\n' +
     'MIIBCgKCAQEAu1ze8eitZfmeAY5D3U+NfVjSd33/fpquVxZqP155hZXX3Gt1K4EF\n' +
@@ -183,4 +192,58 @@ test.only('Buffer to Uint8Array refactor compatibility', (t) => {
 
   t.deepEqual(verify(signed, publicKey), body)
   t.deepEqual(decrypt(encrypted, privateKey), JSON.stringify(body))
+})
+
+test('encryptId/decryptId', (t) => {
+  const id = 22334
+  const exp = Date.now() + 300_000
+  let body = { id, exp }
+
+  t.throws(() => encryptId(randomBytes(16).toString('hex'), id, exp), {
+    message: /^Invalid tokenKey size/,
+  })
+  t.throws(() => encryptId(undefined, id, exp), {
+    message: 'tokenKey must be a string.',
+  })
+  t.throws(() => encryptId(null, id, exp), {
+    message: 'tokenKey must be a string.',
+  })
+
+  // @ts-ignore
+  t.throws(() => encryptId(generateTokenKey(), 'wawwa', exp), {
+    message: /^id must be an integer/,
+  })
+  // @ts-ignore
+  t.throws(() => encryptId(generateTokenKey(), undefined, exp), {
+    message: /^id must be an integer/,
+  })
+  // @ts-ignore
+  t.throws(() => encryptId(generateTokenKey(), null, exp), {
+    message: /^id must be an integer/,
+  })
+
+  // @ts-ignore
+  t.throws(() => encryptId(generateTokenKey(), id, 'wawa'), {
+    message: /^exp must be an integer/,
+  })
+
+  let tokenKey = generateTokenKey()
+  const encryptedId1 = encryptId(tokenKey, id, exp)
+  const encryptedId2 = encryptId(tokenKey, id, exp)
+
+  t.not(encryptedId1, encryptedId2)
+  t.deepEqual(decryptId(tokenKey, encryptedId1), body)
+  t.deepEqual(decryptId(tokenKey, encryptedId2), body)
+
+  tokenKey = generateTokenKey()
+  let encryptedId = encryptId(tokenKey, id, Date.now() - 100_000)
+  t.throws(() => decryptId(tokenKey, encryptedId), {
+    message: 'Expired token.',
+  })
+
+  tokenKey = generateTokenKey()
+  encryptedId = encryptId(tokenKey, id, 0)
+  t.notThrows(() => decryptId(tokenKey, encryptedId))
+  encryptedId = encryptId(tokenKey, id)
+  t.notThrows(() => decryptId(tokenKey, encryptedId))
 })

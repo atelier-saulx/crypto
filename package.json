@@ -3,22 +3,16 @@
   "version": "1.0.0",
   "sideEffects": false,
   "scripts": {
-    "build": "npx tsc",
-    "watch": "npx tsc --watch",
+    "clean": "rimraf {dist,node_modules}",
+    "build": "rm -rf ./dist && npx tsc",
+    "watch": "rm -rf ./dist && npx tsc --watch",
     "test": "ava --color --only --timeout 1m --verbose"
   },
+  "files": [
+    "dist/src"
+  ],
   "repository": "https://github.com/atelier-saulx/crypto",
-  "main": "dist/index.js",
-  "lint-staged": {
-    "{js,json}": [
-      "prettier --write",
-      "git add"
-    ],
-    "*.js": [
-      "eslint --fix",
-      "git add"
-    ]
-  },
+  "main": "./dist/src/index.js",
   "ava": {
     "files": [
       "test/**/*.ts"
@@ -30,24 +24,14 @@
       "ts-node/register"
     ]
   },
-  "browser": {
-    "stream": false
-  },
   "prettier": "@saulx/prettier-config",
-  "eslintConfig": {
-    "extends": "@saulx/eslint-config"
-  },
-  "dependencies": {},
   "devDependencies": {
-    "prettier": "^2.2.1",
-    "husky": "^3.0.8",
-    "lint-staged": "^9.4.2",
-    "@saulx/eslint-config": "https://github.com/atelier-saulx/eslint-config",
-    "@saulx/prettier-config": "https://github.com/atelier-saulx/prettier-config",
-    "eslint": "^7.18.0",
-    "@types/node": "18.11.15",
-    "ts-node": "10.9.1",
-    "typescript": "4.9.5",
-    "ava": "3"
+    "@saulx/prettier-config": "^2.0.0",
+    "@saulx/tsconfig": "^1.0.6",
+    "@types/node": "18",
+    "ava": "^6.2.0",
+    "rimraf": "^6.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.2.2"
   }
 }

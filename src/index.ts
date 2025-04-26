@@ -1,4 +1,4 @@
-import crypto, {
+import {
   generateKeyPair as nodeGenerateKeyPair,
   sign as nodeSign,
   verify as nodeVerify,
@@ -10,6 +10,7 @@ import crypto, {
   createDecipheriv,
 } from 'node:crypto'
 
+/** Generates a RSA private/public key pair. */
 export const generateKeyPair = async (): Promise<{
   publicKey: string
   privateKey: string
@@ -33,9 +34,12 @@ export const generateKeyPair = async (): Promise<{
           reject(err)
         }
         resolve({ publicKey, privateKey })
-      }
+      },
     )
   })
+
+/** Generates a tokenKey for encryptId/decryptId */
+export const generateTokenKey = () => randomBytes(32).toString('hex')
 
 // NOTE: If used client side, provavly should
 // extract the verify function to its own
@@ -74,7 +78,7 @@ export const sign = (payload: string | object, privateKey: string): string => {
  */
 export const verify = <T extends string | object>(
   payload: string,
-  publicKey: string
+  publicKey: string,
 ): T => {
   const payloadBuffer = Buffer.from(payload, 'base64')
   const type = payloadBuffer.subarray(payloadBuffer.length - 1).toString('utf8')
@@ -89,7 +93,7 @@ export const verify = <T extends string | object>(
         key: publicKey,
         padding: cryptConstants.RSA_PKCS1_PSS_PADDING,
       },
-      signature
+      signature,
     )
   ) {
     throw new Error('Verify failed')
@@ -142,7 +146,7 @@ export const decrypt = (payload: string, privateKey: string): string => {
   const nonce = keyAndNonce.subarray(32)
   // console.log({ key, nonce })
 
-  const decipher = crypto.createDecipheriv('chacha20', key, nonce)
+  const decipher = createDecipheriv('chacha20', key, nonce)
   let decryptedData = decipher.update(encryptedPayload, null, 'utf8')
   decryptedData += decipher.final('utf8')
   return decryptedData
@@ -150,7 +154,7 @@ export const decrypt = (payload: string, privateKey: string): string => {
 
 const encodeEncryptedKeyAndPayload = (
   encryptedKey: Buffer,
-  encryptedPayload: Buffer
+  encryptedPayload: Buffer,
 ): string => {
   return Buffer.concat([encryptedKey, encryptedPayload]).toString('base64')
 }
@@ -165,23 +169,40 @@ const decodeEncryptedKeyAndPayload = (payload: string) => {
 const ENCRYPT_ID_IV_LENGTH = 12
 const ECNRYPT_ID_AUTH_TAG_LENGTH = 16
 const ECNRYPT_ID_ALGORITHM = 'aes-256-gcm'
-export const encryptId = (tokenKey: string, id: number, exp: number = 0) => {
-  if (id < 0 || id > 4294967295) {
+/**
+ * Encrypts id with a tokenKey.
+ * expireTimestamp must be a timestamp or 0/null/undefined for no expire.
+ * WARNING: Encrypted token is never repeated even with the same arguments.
+ */
+export const encryptId = (
+  tokenKey: string,
+  id: number,
+  expireTimestamp: number = 0,
+) => {
+  if (typeof tokenKey !== 'string') {
+    throw new Error('tokenKey must be a string.')
+  }
+  if (tokenKey.length !== 64) {
+    throw new Error(
+      'Invalid tokenKey size. Use this module generateTokenKey() to create a key.',
+    )
+  }
+  if (!Number.isInteger(id) || id < 0 || id > 4294967295) {
     // 2^32 - 1
     throw new Error(
-      'id must fit within a 4-byte unsigned integer range (0 to 4294967295).'
+      'id must be an integer and fit within a 4-byte unsigned integer range (0 to 4294967295).',
     )
   }
-  if (typeof exp !== 'number' || !Number.isInteger(exp)) {
-    throw new Error('exp must be an integer.')
+  if (!Number.isInteger(expireTimestamp)) {
+    throw new Error('exp must be an integer or BigInt.')
   }
-  if (exp < 0 || exp > Number.MAX_SAFE_INTEGER) {
+  if (expireTimestamp < 0 || expireTimestamp > Number.MAX_SAFE_INTEGER) {
     console.warn(
-      'exp is negative or may exceed safe integer range. Consider using BigInt for full 8-byte unsigned timestamps.'
+      'exp is negative or may exceed safe integer range. Consider using BigInt for full 8-byte unsigned timestamps.',
     )
-    if (exp < 0) {
+    if (expireTimestamp < 0) {
       throw new Error(
-        'Timestamp must be non-negative for unsigned representation.'
+        'Timestamp must be non-negative for unsigned representation.',
       )
     }
   }
@@ -191,8 +212,8 @@ export const encryptId = (tokenKey: string, id: number, exp: number = 0) => {
   const buffer = Buffer.alloc(12)
   buffer.writeUint32LE(id, 0)
 
-  const high = Math.floor(exp / 2 ** 32)
-  const low = exp % 2 ** 32
+  const high = Math.floor(expireTimestamp / 2 ** 32)
+  const low = expireTimestamp % 2 ** 32
   buffer.writeUInt32LE(high, 4) // Write the high 32 bits (Little-Endian, Unsigned)
   buffer.writeUInt32LE(low, 8) // Write the low 32 bits (Little-Endian, Unsigned)
 
@@ -220,10 +241,10 @@ export const decryptId = (tokenKey: string, token: string) => {
 
   const encryptedPayload = tokenBuffer.subarray(
     ENCRYPT_ID_IV_LENGTH,
-    tokenBuffer.length - ECNRYPT_ID_AUTH_TAG_LENGTH
+    tokenBuffer.length - ECNRYPT_ID_AUTH_TAG_LENGTH,
   )
   const authTag = tokenBuffer.subarray(
-    tokenBuffer.length - ECNRYPT_ID_AUTH_TAG_LENGTH
+    tokenBuffer.length - ECNRYPT_ID_AUTH_TAG_LENGTH,
   )
   const decipher = createDecipheriv(ECNRYPT_ID_ALGORITHM, key, iv, {
     authTagLength: ECNRYPT_ID_AUTH_TAG_LENGTH,
@@ -239,6 +260,10 @@ export const decryptId = (tokenKey: string, token: string) => {
   const high = decryptedPayload.readUInt32LE(4)
   const low = decryptedPayload.readUInt32LE(8)
   const exp = high * 2 ** 32 + low
+
+  if (exp !== 0 && exp < Date.now()) {
+    throw new Error('Expired token.')
+  }
 
   return { id, exp }
 }
