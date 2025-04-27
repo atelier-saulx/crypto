@@ -144,6 +144,7 @@ test('should fail with wrong key', async (t) => {
 })
 
 test('Legacy compatibility', (t) => {
+  // INFO: This is a test key not used anywhere
   const publicKey =
     '-----BEGIN RSA PUBLIC KEY-----\n' +
     'MIIBCgKCAQEAu1ze8eitZfmeAY5D3U+NfVjSd33/fpquVxZqP155hZXX3Gt1K4EF\n' +
