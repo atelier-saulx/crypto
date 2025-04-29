@@ -163,6 +163,22 @@ test('sign creates different signed token each time', async (t) => {
   t.deepEqual(verified1, verified2)
 })
 
+test('encrypt creates different cipher text each time', async (t) => {
+  const { publicKey, privateKey } = await generateKeyPair()
+
+  const plain = 'wawa'
+
+  const encrypted1 = encrypt(plain, publicKey)
+  const encrypted2 = encrypt(plain, publicKey)
+
+  t.not(encrypted1, encrypted2)
+
+  const decrypted1 = decrypt(encrypted1, privateKey)
+  const decrypted2 = decrypt(encrypted2, privateKey)
+
+  t.is(decrypted1, decrypted2)
+})
+
 test('Legacy compatibility', (t) => {
   // INFO: This is a test key not used anywhere
   const publicKey =
