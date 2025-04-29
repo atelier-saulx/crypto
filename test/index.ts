@@ -160,6 +160,7 @@ test('sign creates different signed token each time', async (t) => {
   const verified1 = verify(signed1, publicKey)
   const verified2 = verify(signed2, publicKey)
 
+  t.deepEqual(data, verified1)
   t.deepEqual(verified1, verified2)
 })
 
@@ -176,6 +177,7 @@ test('encrypt creates different cipher text each time', async (t) => {
   const decrypted1 = decrypt(encrypted1, privateKey)
   const decrypted2 = decrypt(encrypted2, privateKey)
 
+  t.is(plain, decrypted1)
   t.is(decrypted1, decrypted2)
 })
 
