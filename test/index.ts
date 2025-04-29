@@ -143,6 +143,26 @@ test('should fail with wrong key', async (t) => {
   })
 })
 
+test('sign creates different signed token each time', async (t) => {
+  const { publicKey, privateKey } = await generateKeyPair()
+  const data = {
+    wawa: 'wawa',
+    yeye: {
+      wuhuu: 'ye',
+    },
+  }
+
+  const signed1 = sign(data, privateKey)
+  const signed2 = sign(data, privateKey)
+
+  t.not(signed1, signed2)
+
+  const verified1 = verify(signed1, publicKey)
+  const verified2 = verify(signed2, publicKey)
+
+  t.deepEqual(verified1, verified2)
+})
+
 test('Legacy compatibility', (t) => {
   // INFO: This is a test key not used anywhere
   const publicKey =
