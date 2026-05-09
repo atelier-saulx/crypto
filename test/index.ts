@@ -8,6 +8,8 @@ import {
   encryptId,
   generateTokenKey,
   decryptId,
+  encryptString,
+  decryptString,
 } from '../src'
 import { randomBytes } from 'node:crypto'
 
@@ -285,4 +287,53 @@ test('encryptId/decryptId', (t) => {
   t.notThrows(() => decryptId(tokenKey, encryptedId))
   encryptedId = encryptId(tokenKey, id)
   t.notThrows(() => decryptId(tokenKey, encryptedId))
+})
+
+test('encryptString/decryptString', (t) => {
+  const value = 'Hello, world!'
+
+  t.throws(() => encryptString(randomBytes(16).toString('hex'), value), {
+    message: /^Invalid encryptionKey size/,
+  })
+  t.throws(() => encryptString(undefined, value), {
+    message: 'encryptionKey must be a string.',
+  })
+  t.throws(() => encryptString(null, value), {
+    message: 'encryptionKey must be a string.',
+  })
+
+  // @ts-ignore
+  t.throws(() => encryptString(generateTokenKey(), 123), {
+    message: 'value must be a string.',
+  })
+
+  let encryptionKey = generateTokenKey()
+  const encrypted1 = encryptString(encryptionKey, value)
+  const encrypted2 = encryptString(encryptionKey, value)
+
+  t.not(encrypted1, encrypted2)
+  t.is(decryptString(encryptionKey, encrypted1), value)
+  t.is(decryptString(encryptionKey, encrypted2), value)
+
+  // Empty string
+  const empty = encryptString(encryptionKey, '')
+  t.is(decryptString(encryptionKey, empty), '')
+
+  // Unicode/emoji
+  const unicode = 'Héllo 🌍 世界'
+  const encryptedUnicode = encryptString(encryptionKey, unicode)
+  t.is(decryptString(encryptionKey, encryptedUnicode), unicode)
+
+  // Wrong key
+  const otherKey = generateTokenKey()
+  t.throws(() => decryptString(otherKey, encrypted1))
+
+  // Tampered token
+  const tampered = encrypted1.substring(0, 4) + 'x' + encrypted1.substring(5)
+  t.throws(() => decryptString(encryptionKey, tampered))
+
+  // Short token
+  t.throws(() => decryptString(encryptionKey, 'short'), {
+    message: 'Token is too short.',
+  })
 })

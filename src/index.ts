@@ -166,9 +166,9 @@ const decodeEncryptedKeyAndPayload = (payload: string) => {
   return { encryptedKey, encryptedPayload }
 }
 
-const ENCRYPT_ID_IV_LENGTH = 12
-const ECNRYPT_ID_AUTH_TAG_LENGTH = 16
-const ECNRYPT_ID_ALGORITHM = 'aes-256-gcm'
+const SYMMETRIC_ENCRYPTION_IV_LENGTH = 12
+const SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH = 16
+const SYMMETRIC_ENCRYPTION_ALGORITHM = 'aes-256-gcm'
 /**
  * Encrypts id with a tokenKey.
  * expireTimestamp must be a timestamp or 0/null/undefined for no expire.
@@ -217,9 +217,9 @@ export const encryptId = (
   buffer.writeUInt32LE(high, 4) // Write the high 32 bits (Little-Endian, Unsigned)
   buffer.writeUInt32LE(low, 8) // Write the low 32 bits (Little-Endian, Unsigned)
 
-  const iv = randomBytes(ENCRYPT_ID_IV_LENGTH)
-  const cipher = createCipheriv(ECNRYPT_ID_ALGORITHM, key, iv, {
-    authTagLength: ECNRYPT_ID_AUTH_TAG_LENGTH,
+  const iv = randomBytes(SYMMETRIC_ENCRYPTION_IV_LENGTH)
+  const cipher = createCipheriv(SYMMETRIC_ENCRYPTION_ALGORITHM, key, iv, {
+    authTagLength: SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH,
   })
 
   const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()])
@@ -233,21 +233,21 @@ export const encryptId = (
 export const decryptId = (tokenKey: string, token: string) => {
   const key = Buffer.from(tokenKey, 'hex')
   const tokenBuffer = Buffer.from(token, 'base64url')
-  const iv = tokenBuffer.subarray(0, ENCRYPT_ID_IV_LENGTH)
+  const iv = tokenBuffer.subarray(0, SYMMETRIC_ENCRYPTION_IV_LENGTH)
 
-  if (tokenBuffer.length < ENCRYPT_ID_IV_LENGTH + ENCRYPT_ID_IV_LENGTH + 12) {
+  if (tokenBuffer.length < SYMMETRIC_ENCRYPTION_IV_LENGTH + SYMMETRIC_ENCRYPTION_IV_LENGTH + 12) {
     throw new Error('Token is too short.')
   }
 
   const encryptedPayload = tokenBuffer.subarray(
-    ENCRYPT_ID_IV_LENGTH,
-    tokenBuffer.length - ECNRYPT_ID_AUTH_TAG_LENGTH,
+    SYMMETRIC_ENCRYPTION_IV_LENGTH,
+    tokenBuffer.length - SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH,
   )
   const authTag = tokenBuffer.subarray(
-    tokenBuffer.length - ECNRYPT_ID_AUTH_TAG_LENGTH,
+    tokenBuffer.length - SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH,
   )
-  const decipher = createDecipheriv(ECNRYPT_ID_ALGORITHM, key, iv, {
-    authTagLength: ECNRYPT_ID_AUTH_TAG_LENGTH,
+  const decipher = createDecipheriv(SYMMETRIC_ENCRYPTION_ALGORITHM, key, iv, {
+    authTagLength: SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH,
   })
   decipher.setAuthTag(authTag)
   const decryptedPayload = Buffer.concat([
@@ -266,4 +266,83 @@ export const decryptId = (tokenKey: string, token: string) => {
   }
 
   return { id, exp }
+}
+
+/**
+ * Encrypts a string with AES-256-GCM.
+ * Uses a 32-byte hex tokenKey (same format as encryptId).
+ * Returns a base64url string containing IV + ciphertext + authTag.
+ */
+export const encryptString = (encryptionKey: string, value: string): string => {
+  if (typeof encryptionKey !== 'string') {
+    throw new Error('encryptionKey must be a string.')
+  }
+  if (encryptionKey.length !== 64) {
+    throw new Error(
+      'Invalid encryptionKey size. Use this module generateTokenKey() to create a key.',
+    )
+  }
+  if (typeof value !== 'string') {
+    throw new Error('value must be a string.')
+  }
+
+  const key = Buffer.from(encryptionKey, 'hex')
+  const iv = randomBytes(SYMMETRIC_ENCRYPTION_IV_LENGTH)
+  const cipher = createCipheriv(SYMMETRIC_ENCRYPTION_ALGORITHM, key, iv, {
+    authTagLength: SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH,
+  })
+
+  cipher.setAAD(Buffer.from('encryptString', 'utf8'))
+
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()])
+  const authTag = cipher.getAuthTag()
+  const tokenBuffer = Buffer.concat([iv, encrypted, authTag])
+
+  return tokenBuffer.toString('base64url')
+}
+
+/**
+ * Decrypts a string previously encrypted with encryptString.
+ * Uses a 32-byte hex tokenKey (same format as decryptId).
+ */
+export const decryptString = (encryptionKey: string, encryptedString: string): string => {
+  if (typeof encryptionKey !== 'string') {
+    throw new Error('encryptionKey must be a string.')
+  }
+  if (encryptionKey.length !== 64) {
+    throw new Error(
+      'Invalid encryptionKey size. Use this module generateTokenKey() to create a key.',
+    )
+  }
+  if (typeof encryptedString !== 'string') {
+    throw new Error('encryptedString must be a string.')
+  }
+
+  const key = Buffer.from(encryptionKey, 'hex')
+  const tokenBuffer = Buffer.from(encryptedString, 'base64url')
+
+  if (tokenBuffer.length < SYMMETRIC_ENCRYPTION_IV_LENGTH + SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH) {
+    throw new Error('Token is too short.')
+  }
+
+  const iv = tokenBuffer.subarray(0, SYMMETRIC_ENCRYPTION_IV_LENGTH)
+  const encryptedPayload = tokenBuffer.subarray(
+    SYMMETRIC_ENCRYPTION_IV_LENGTH,
+    tokenBuffer.length - SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH,
+  )
+  const authTag = tokenBuffer.subarray(
+    tokenBuffer.length - SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH,
+  )
+
+  const decipher = createDecipheriv(SYMMETRIC_ENCRYPTION_ALGORITHM, key, iv, {
+    authTagLength: SYMMETRIC_ENCRYPTION_AUTH_TAG_LENGTH,
+  })
+  decipher.setAuthTag(authTag)
+  decipher.setAAD(Buffer.from('encryptString', 'utf8'))
+  const decryptedPayload = Buffer.concat([
+    decipher.update(encryptedPayload),
+    decipher.final(),
+  ])
+
+  return decryptedPayload.toString('utf8')
 }
